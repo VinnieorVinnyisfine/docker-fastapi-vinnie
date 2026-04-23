@@ -46,7 +46,8 @@ def get_bookings():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT hotel_bookings.id, hotel_rooms.room_number, hotel_bookings.datefrom, hotel_bookings.dateto, hotel_bookings.addinfo
+        SELECT hotel_bookings.id, hotel_bookings.room_id, hotel_rooms.room_number,
+               hotel_bookings.datefrom, hotel_bookings.dateto, hotel_bookings.addinfo
         FROM hotel_bookings
         JOIN hotel_rooms ON hotel_bookings.room_id = hotel_rooms.id
         ORDER BY hotel_bookings.id
@@ -60,10 +61,11 @@ def get_bookings():
     for row in rows:
         bookings.append({
             "id": row[0],
-            "room_number": row[1],
-            "datefrom": str(row[2]),
-            "dateto": str(row[3]),
-            "addinfo": row[4]
+            "room_id": row[1],
+            "room_number": row[2],
+            "datefrom": str(row[3]),
+            "dateto": str(row[4]),
+            "addinfo": row[5]
         })
 
     return bookings
@@ -97,22 +99,22 @@ def home():
         <h1>Hotel Booking</h1>
 
         <label>Choose room:</label>
-        <select id="roomSelect"></select>
+        <select id="room"></select>
         <br><br>
 
         <label>Date from:</label>
-        <input type="date" id="dateFrom">
+        <input type="date" id="datefrom">
         <br><br>
 
         <label>Date to:</label>
-        <input type="date" id="dateTo">
+        <input type="date" id="dateto">
         <br><br>
 
         <label>Additional info:</label>
-        <input type="text" id="addInfo">
+        <input type="text" id="info">
         <br><br>
 
-        <input type="button" value="Save booking" onclick="saveBooking()">
+        <button onclick="saveBooking()">Save booking</button>
 
         <h2>All bookings</h2>
         <ul id="bookingList"></ul>
@@ -122,7 +124,7 @@ def home():
                 let response = await fetch("/rooms");
                 let rooms = await response.json();
 
-                let select = document.getElementById("roomSelect");
+                let select = document.getElementById("room");
                 select.innerHTML = "";
 
                 for (let i = 0; i < rooms.length; i++) {
@@ -152,10 +154,10 @@ def home():
             }
 
             async function saveBooking() {
-                let room_id = parseInt(document.getElementById("roomSelect").value);
-                let datefrom = document.getElementById("dateFrom").value;
-                let dateto = document.getElementById("dateTo").value;
-                let addinfo = document.getElementById("addInfo").value;
+                let room_id = parseInt(document.getElementById("room").value);
+                let datefrom = document.getElementById("datefrom").value;
+                let dateto = document.getElementById("dateto").value;
+                let addinfo = document.getElementById("info").value;
 
                 let response = await fetch("/bookings", {
                     method: "POST",
