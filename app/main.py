@@ -1,49 +1,184 @@
-from typing import Optional
+import os
+import psycopg
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 
 app = FastAPI()
 
-rooms = [
-    {
-        "room_number": 101,
-        "type": "Single",
-        "price": 80,
-        "bookable": True
-    },
-    {
-        "room_number": 102,
-        "type": "Double",
-        "price": 120,
-        "bookable": True
-    },
-    {
-        "room_number": 201,
-        "type": "Suite",
-        "price": 200,
-        "bookable": False
-    }
-]
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-@app.get("/")
-def read_root():
-    return {"msg": "Hello Vinny", "v": "0.2"}
 
-@app.get("/items/{item_id}")
-def read_item(item_id: int, q: Optional[str] = None):
-    return {"item_id": item_id, "q": q}
+class Booking(BaseModel):
+    room_id: int
+    datefrom: str
+    dateto: str
+    addinfo: str = ""
 
-@app.get("/api/ip")
-def get_ip(request: Request):
-    ip = request.client.host if request.client else "unknown"
-    return {"ip": ip}
-
-@app.get("/ip", response_class=HTMLResponse)
-def get_ip_html(request: Request):
-    ip = request.client.host if request.client else "unknown"
-    return f"<h1>Your public IP is {ip}</h1>"
 
 @app.get("/rooms")
 def get_rooms():
+    conn = psycopg.connect(DATABASE_URL)
+    cur = conn.cursor()
+
+    cur.execute("SELECT id, room_number, type, price FROM hotel_rooms ORDER BY room_number")
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    rooms = []
+    for row in rows:
+        rooms.append({
+            "id": row[0],
+            "room_number": row[1],
+            "type": row[2],
+            "price": float(row[3])
+        })
+
     return rooms
+
+
+@app.get("/bookings")
+def get_bookings():
+    conn = psycopg.connect(DATABASE_URL)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT hotel_bookings.id, hotel_rooms.room_number, hotel_bookings.datefrom, hotel_bookings.dateto, hotel_bookings.addinfo
+        FROM hotel_bookings
+        JOIN hotel_rooms ON hotel_bookings.room_id = hotel_rooms.id
+        ORDER BY hotel_bookings.id
+    """)
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    bookings = []
+    for row in rows:
+        bookings.append({
+            "id": row[0],
+            "room_number": row[1],
+            "datefrom": str(row[2]),
+            "dateto": str(row[3]),
+            "addinfo": row[4]
+        })
+
+    return bookings
+
+
+@app.post("/bookings")
+def create_booking(booking: Booking):
+    conn = psycopg.connect(DATABASE_URL)
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO hotel_bookings (guest_id, room_id, datefrom, dateto, addinfo)
+        VALUES (%s, %s, %s, %s, %s)
+    """, (1, booking.room_id, booking.datefrom, booking.dateto, booking.addinfo))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return {"message": "Booking saved"}
+
+
+@app.get("/", response_class=HTMLResponse)
+def home():
+    return """
+    <html>
+    <head>
+        <title>Hotel Front-end</title>
+    </head>
+    <body>
+        <h1>Hotel Booking</h1>
+
+        <label>Choose room:</label>
+        <select id="roomSelect"></select>
+        <br><br>
+
+        <label>Date from:</label>
+        <input type="date" id="dateFrom">
+        <br><br>
+
+        <label>Date to:</label>
+        <input type="date" id="dateTo">
+        <br><br>
+
+        <label>Additional info:</label>
+        <input type="text" id="addInfo">
+        <br><br>
+
+        <input type="button" value="Save booking" onclick="saveBooking()">
+
+        <h2>All bookings</h2>
+        <ul id="bookingList"></ul>
+
+        <script>
+            async function loadRooms() {
+                let response = await fetch("/rooms");
+                let rooms = await response.json();
+
+                let select = document.getElementById("roomSelect");
+                select.innerHTML = "";
+
+                for (let i = 0; i < rooms.length; i++) {
+                    let option = document.createElement("option");
+                    option.value = rooms[i].id;
+                    option.textContent = "Room " + rooms[i].room_number + " - " + rooms[i].type;
+                    select.appendChild(option);
+                }
+            }
+
+            async function loadBookings() {
+                let response = await fetch("/bookings");
+                let bookings = await response.json();
+
+                let list = document.getElementById("bookingList");
+                list.innerHTML = "";
+
+                for (let i = 0; i < bookings.length; i++) {
+                    let li = document.createElement("li");
+                    li.textContent =
+                        "Room " + bookings[i].room_number +
+                        " | " + bookings[i].datefrom +
+                        " to " + bookings[i].dateto +
+                        " | " + bookings[i].addinfo;
+                    list.appendChild(li);
+                }
+            }
+
+            async function saveBooking() {
+                let room_id = parseInt(document.getElementById("roomSelect").value);
+                let datefrom = document.getElementById("dateFrom").value;
+                let dateto = document.getElementById("dateTo").value;
+                let addinfo = document.getElementById("addInfo").value;
+
+                let response = await fetch("/bookings", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        room_id: room_id,
+                        datefrom: datefrom,
+                        dateto: dateto,
+                        addinfo: addinfo
+                    })
+                });
+
+                let result = await response.json();
+                alert(result.message);
+
+                loadBookings();
+            }
+
+            loadRooms();
+            loadBookings();
+        </script>
+    </body>
+    </html>
+    """
