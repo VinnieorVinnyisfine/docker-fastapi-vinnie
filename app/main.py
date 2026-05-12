@@ -18,6 +18,10 @@ class Booking(BaseModel):
     addinfo: str = ""
 
 
+class StarsReview(BaseModel):
+    stars: int
+
+
 @app.get("/rooms")
 def get_rooms():
     conn = psycopg.connect(DATABASE_URL)
@@ -108,7 +112,9 @@ def get_bookings():
             (hotel_bookings.dateto - hotel_bookings.datefrom) AS number_of_nights,
 
             (hotel_bookings.dateto - hotel_bookings.datefrom)
-            * hotel_rooms.price AS total_price
+            * hotel_rooms.price AS total_price,
+
+            hotel_bookings.stars
 
         FROM hotel_bookings
 
@@ -138,7 +144,8 @@ def get_bookings():
             "dateto": str(row[5]),
             "addinfo": row[6],
             "number_of_nights": row[7],
-            "total_price": float(row[8])
+            "total_price": float(row[8]),
+            "stars": row[9]
         })
 
     return bookings
@@ -168,6 +175,28 @@ def create_booking(booking: Booking):
     conn.close()
 
     return {"message": "Booking saved"}
+
+
+@app.put("/bookings/{booking_id}")
+def update_stars(booking_id: int, review: StarsReview):
+    conn = psycopg.connect(DATABASE_URL)
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE hotel_bookings
+        SET stars = %s
+        WHERE id = %s
+    """, (
+        review.stars,
+        booking_id
+    ))
+
+    conn.commit()
+
+    cur.close()
+    conn.close()
+
+    return {"message": "Stars updated"}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -285,7 +314,13 @@ def home():
 
                     let li = document.createElement("li");
 
-                    li.textContent =
+                    let starsText = "No review";
+
+                    if (bookings[i].stars !== null) {
+                        starsText = bookings[i].stars + " stars";
+                    }
+
+                    li.innerHTML =
 
                         bookings[i].guest_name +
 
@@ -309,9 +344,25 @@ def home():
 
                         bookings[i].total_price +
 
+                        " | Review: " +
+
+                        starsText +
+
                         " | " +
 
-                        bookings[i].addinfo;
+                        bookings[i].addinfo +
+
+                        " | Select stars: " +
+
+                        "<select id='stars-" + bookings[i].id + "'>" +
+                            "<option value='1'>1 star</option>" +
+                            "<option value='2'>2 stars</option>" +
+                            "<option value='3'>3 stars</option>" +
+                            "<option value='4'>4 stars</option>" +
+                            "<option value='5'>5 stars</option>" +
+                        "</select>" +
+
+                        " <button onclick='updateStars(" + bookings[i].id + ")'>Save review</button>";
 
                     list.appendChild(li);
                 }
@@ -350,6 +401,33 @@ def home():
                         datefrom: datefrom,
                         dateto: dateto,
                         addinfo: addinfo
+                    })
+                });
+
+                let result = await response.json();
+
+                alert(result.message);
+
+                loadGuests();
+                loadBookings();
+            }
+
+
+            async function updateStars(bookingId) {
+
+                let stars =
+                    parseInt(document.getElementById("stars-" + bookingId).value);
+
+                let response = await fetch("/bookings/" + bookingId, {
+
+                    method: "PUT",
+
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        stars: stars
                     })
                 });
 
